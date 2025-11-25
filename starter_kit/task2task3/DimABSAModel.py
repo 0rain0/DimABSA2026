@@ -7,7 +7,8 @@ class DimABSA(nn.Module):
 
         super(DimABSA, self).__init__()
 
-        self.bert = BertModel.from_pretrained(bert_model_type)
+        self.bert = BertModel.from_pretrained(bert_model_type, trust_remote_code=True)
+
 
         self.classifier_a_start = nn.Linear(hidden_size, 2)
         self.classifier_a_end = nn.Linear(hidden_size, 2)
