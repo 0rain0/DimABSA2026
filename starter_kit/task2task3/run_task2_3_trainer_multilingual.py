@@ -954,7 +954,6 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
             {'params': [p for n, p in param_optimizer if "bert" in n], 'weight_decay': 0.01},
             {'params': [p for n, p in param_optimizer if "bert" not in n],
              'lr': args.learning_rate, 'weight_decay': 0.01}]
-        # optimizer = AdamW(optimizer_grouped_parameters, lr=args.tuning_bert_rate, correct_bias=False)
         optimizer = AdamW(optimizer_grouped_parameters, lr=args.tuning_bert_rate)
 
         # load saved model, optimizer and epoch num
@@ -988,6 +987,7 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
 
                 optimizer.zero_grad()
 
+                # ----- forward aspect A -----
                 f_aspect_start_scores, f_aspect_end_scores = model(batch_dict['forward_asp_query'],
                                                                    batch_dict['forward_asp_query_mask'],
                                                                    batch_dict['forward_asp_query_seg'], 'A')
@@ -995,6 +995,7 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                                                          batch_dict['forward_asp_answer_start'],
                                                          batch_dict['forward_asp_answer_end'], args.gpu)
 
+                # ----- backward opinion O -----
                 b_opi_start_scores, b_opi_end_scores = model(batch_dict['backward_opi_query'],
                                                              batch_dict['backward_opi_query_mask'],
                                                              batch_dict['backward_opi_query_seg'], 'O')
@@ -1002,7 +1003,7 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                                                          batch_dict['backward_opi_answer_start'],
                                                          batch_dict['backward_opi_answer_end'], args.gpu)
 
-                # TODO f_opi
+                # ----- forward opinion given aspect AO -----
                 batch_dict['forward_opi_query'] = batch_dict['forward_opi_query'] \
                     .view(-1, batch_dict['forward_opi_query'].size(-1))
                 batch_dict['forward_opi_query_mask'] = batch_dict['forward_opi_query_mask'] \
@@ -1024,7 +1025,7 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                         'forward_opi_answer_end'].size(-1)), args.gpu
                 ) / max_aspect_num
 
-                # TODO b_asp
+                # ----- backward aspect given opinion OA -----
                 batch_dict['backward_asp_query'] = batch_dict['backward_asp_query'] \
                     .view(-1, batch_dict['backward_asp_query'].size(-1))
                 batch_dict['backward_asp_query_mask'] = batch_dict['backward_asp_query_mask'] \
@@ -1046,8 +1047,8 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                         'backward_asp_answer_end'].size(-1)), args.gpu
                 ) / max_aspect_num
 
+                # ----- category C -----
                 if args.task == 3 and 'category_query' in batch_dict:
-                    # TODO category
                     batch_dict['category_query'] = batch_dict['category_query'] \
                         .view(-1, batch_dict['category_query'].size(-1))
                     batch_dict['category_query_mask'] = batch_dict['category_query_mask'] \
@@ -1067,11 +1068,13 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                 else:
                     category_loss = torch.tensor(0.).to("cuda")
 
-
-                # TODO Valence and Arousal
-                batch_dict['valence_query'] = batch_dict['valence_query'].view(-1, batch_dict['valence_query'].size(-1))
-                batch_dict['valence_query_mask'] = batch_dict['valence_query_mask'].view(-1, batch_dict['valence_query_mask'].size(-1))
-                batch_dict['valence_query_seg'] = batch_dict['valence_query_seg'].view(-1, batch_dict['valence_query_seg'].size(-1))
+                # ----- Valence -----
+                batch_dict['valence_query'] = batch_dict['valence_query'] \
+                    .view(-1, batch_dict['valence_query'].size(-1))
+                batch_dict['valence_query_mask'] = batch_dict['valence_query_mask'] \
+                    .view(-1, batch_dict['valence_query_mask'].size(-1))
+                batch_dict['valence_query_seg'] = batch_dict['valence_query_seg'] \
+                    .view(-1, batch_dict['valence_query_seg'].size(-1))
 
                 valence_scores = model(batch_dict['valence_query'],
                                        batch_dict['valence_query_mask'],
@@ -1081,6 +1084,7 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                     valence_scores,
                     batch_dict['valence_answer'].view(-1)) / max_aspect_num
 
+                # ----- Arousal -----
                 batch_dict['arousal_query'] = batch_dict['arousal_query'] \
                     .view(-1, batch_dict['arousal_query'].size(-1))
                 batch_dict['arousal_query_mask'] = batch_dict['arousal_query_mask'] \
@@ -1096,25 +1100,25 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
                     arousal_scores,
                     batch_dict['arousal_answer'].view(-1)) / max_aspect_num
 
-                # loss
+                # ----- total loss -----
                 loss_sum = f_asp_loss + f_opi_loss + b_opi_loss + b_asp_loss + \
                            args.beta * category_loss + valence_loss*0.2 + arousal_loss*0.2
+
                 # AMP mixed precision training
                 if args.fp16:
                     with autocast():
                         loss_sum = f_asp_loss + f_opi_loss + b_opi_loss + b_asp_loss + \
-                                args.beta * category_loss + valence_loss*0.2 + arousal_loss*0.2
+                                   args.beta * category_loss + valence_loss*0.2 + arousal_loss*0.2
                     scaler.scale(loss_sum).backward()
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     loss_sum = f_asp_loss + f_opi_loss + b_opi_loss + b_asp_loss + \
-                            args.beta * category_loss + valence_loss*0.2 + arousal_loss*0.2
+                               args.beta * category_loss + valence_loss*0.2 + arousal_loss*0.2
                     loss_sum.backward()
                     optimizer.step()
 
                 scheduler.step()
-
 
                 # train logger
                 if (batch_index + 1) % 10 == 0:
@@ -1156,6 +1160,8 @@ def train(args, train_total_data, test_total_data, inference_dataset, category_m
         exit(1)
     logger.removeHandler(fh)
     logger.removeHandler(sh)
+
+
 
 
 def load_inference_data(args):

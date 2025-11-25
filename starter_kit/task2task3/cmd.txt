@@ -1,0 +1,1 @@
+python run_task2_3_trainer_multilingual.py --bert_model_type hfl/chinese-bert-wwm-ext --task 3 --domain lap --language zho --train_data zho_laptop_train_alltasks.jsonl --infer_data zho_laptop_dev_task3.jsonl --mode train --fp16 true --batch_size 8
